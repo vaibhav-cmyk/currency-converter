@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Currency Converter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background:rgb(228, 187, 187);
+      color: #f8fafc;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Neon glow animations */
+    .neon-glow {
+      box-shadow: 0 0 10px #00eaff, 0 0 20px #00eaff, 0 0 40px #00eaff;
+    }
+
+    .neon-text {
+      text-shadow: 0 0 10px #00eaff, 0 0 20px #00eaff;
+    }
+
+    .card-glow {
+      background: rgba(20, 20, 40, 0.9);
+      border: 1px solid rgba(0, 255, 255, 0.2);
+      box-shadow: 0 0 25px rgba(130, 213, 213, 0.1);
+      backdrop-filter: blur(10px);
+    }
+
+    .transition-all {
+      transition: all 0.3s ease-in-out;
+    }
+  </style>
+</head>
+<body class="flex items-center justify-center p-4">
+
+  <!-- Main Converter Card -->
+  <div class="w-full max-w-lg card-glow p-8 md:p-10 rounded-2xl">
+    <h1 class="text-3xl font-extrabold neon-text text-center mb-4 tracking-wide">
+      <b> CURRENCY CONVERTER</b>
+    </h1>
+    <p class="text-center text-gray-400 mb-6">
+      Convert and compare currencies in real time.
+    </p>
+
+    <!-- Message Area -->
+    <div id="message" role="alert" aria-live="polite"
+         class="hidden mb-4 p-3 rounded-lg text-sm text-center font-medium"></div>
+
+    <!-- Conversion Form -->
+    <div id="conversion-form">
+      <!-- Amount Input -->
+      <div class="mb-6">
+        <label for="amount" class="block text-sm font-semibold text-gray-300 mb-2">Amount</label>
+        <input
+          type="number"
+          id="amount"
+          value="100"
+          min="0.01"
+          step="0.01"
+          required
+          class="w-full p-4 rounded-xl bg-gray-800 text-white border border-cyan-400 focus:ring-2 focus:ring-cyan-500 text-xl font-bold"
+        />
+      </div>
+
+      <div class="flex flex-col md:flex-row gap-4 mb-8">
+        <!-- From Currency -->
+        <div class="flex-1">
+          <label for="from-currency" class="block text-sm font-semibold text-gray-300 mb-1">From</label>
+          <select
+            id="from-currency"
+            class="w-full p-3 bg-gray-800 text-white rounded-lg border border-cyan-400 focus:ring-2 focus:ring-cyan-500"
+          ></select>
+        </div>
+
+        <!-- Swap Button -->
+        <div class="flex items-center justify-center pt-2 md:pt-6">
+          <button
+            type="button"
+            id="swap-button"
+            class="p-3 rounded-full bg-cyan-600 hover:bg-cyan-400 transition-all"
+            aria-label="Swap currencies"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none"
+                 viewBox="0 0 24 24" stroke-width="2"
+                 stroke="currentColor" class="w-6 h-6 text-black">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M7.5 14.25L5.25 12 7.5 9.75m14.25 5.25L18.75 12 21 9.75M18.75 12H5.25" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- To Currency -->
+        <div class="flex-1">
+          <label for="to-currency" class="block text-sm font-semibold text-gray-300 mb-1">To</label>
+          <select
+            id="to-currency"
+            class="w-full p-3 bg-gray-800 text-white rounded-lg border border-cyan-400 focus:ring-2 focus:ring-cyan-500"
+          ></select>
+        </div>
+      </div>
+
+      <!-- Convert Button -->
+      <button
+        id="convert-button"
+        class="w-full bg-cyan-600 text-black font-bold text-lg p-4 rounded-xl hover:bg-cyan-400 neon-glow transition-all"
+      >
+        Convert
+      </button>
+    </div>
+
+    <!-- Result Display -->
+    <div id="result-area"
+         class="mt-8 text-center p-6 rounded-xl border border-cyan-500 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900">
+      <p class="text-sm text-gray-400">Converted Amount</p>
+      <p id="result" class="text-4xl font-extrabold neon-text mt-2">--.--</p>
+    </div>
+
+    
+  </div>
+
+  <script>
+    const API_BASE_URL = 'https://api.frankfurter.app';
+    let currencyCache = { currencies: null, rates: {}, lastUpdated: null };
+
+    const amountInput = document.getElementById('amount');
+    const fromCurrencySelect = document.getElementById('from-currency');
+    const toCurrencySelect = document.getElementById('to-currency');
+    const convertButton = document.getElementById('convert-button');
+    const swapButton = document.getElementById('swap-button');
+    const resultDisplay = document.getElementById('result');
+    const ratesDateDisplay = document.getElementById('rates-date');
+    const messageDisplay = document.getElementById('message');
+
+    function showMessage(text, type = 'info') {
+      messageDisplay.textContent = text;
+      messageDisplay.classList.remove('hidden', 'bg-red-700', 'bg-green-700', 'bg-blue-700');
+      if (type === 'error') messageDisplay.classList.add('bg-red-700');
+      else if (type === 'success') messageDisplay.classList.add('bg-green-700');
+      else if (type === 'loading') messageDisplay.classList.add('bg-blue-700');
+      else messageDisplay.classList.add('bg-gray-700');
+    }
+
+    function clearMessage() {
+      messageDisplay.classList.add('hidden');
+    }
+
+    function populateCurrencies(currencies) {
+      fromCurrencySelect.innerHTML = '';
+      toCurrencySelect.innerHTML = '';
+      for (const code in currencies) {
+        const name = currencies[code];
+        const option = new Option(`${code} - ${name}`, code);
+        fromCurrencySelect.add(option.cloneNode(true));
+        toCurrencySelect.add(option);
+      }
+      fromCurrencySelect.value = 'USD';
+      toCurrencySelect.value = 'EUR';
+    }
+
+    async function fetchCurrencies() {
+      if (currencyCache.currencies) return currencyCache.currencies;
+      showMessage('Loading currencies...', 'loading');
+      try {
+        const response = await fetch(`${API_BASE_URL}/currencies`);
+        const data = await response.json();
+        currencyCache.currencies = data;
+        clearMessage();
+        return data;
+      } catch (error) {
+        showMessage('Failed to load currencies', 'error');
+        return null;
+      }
+    }
+
+    async function getExchangeRate(from, to) {
+      const today = new Date().toISOString().split('T')[0];
+      const cacheKey = `${from}-${today}`;
+      if (currencyCache.rates[cacheKey] && currencyCache.rates[cacheKey].rates[to]) {
+        ratesDateDisplay.textContent = `${currencyCache.rates[cacheKey].date} (Cached)`;
+        return currencyCache.rates[cacheKey].rates[to];
+      }
+      showMessage(`Fetching rate ${from} → ${to}`, 'loading');
+      try {
+        const response = await fetch(`${API_BASE_URL}/${today}?from=${from}`);
+        const data = await response.json();
+        currencyCache.rates[cacheKey] = { date: data.date, rates: data.rates };
+        currencyCache.lastUpdated = data.date;
+        ratesDateDisplay.textContent = `${data.date} (Live)`;
+        clearMessage();
+        return data.rates[to];
+      } catch (error) {
+        showMessage('Error fetching rate', 'error');
+        return null;
+      }
+    }
+
+    async function convertCurrency() {
+      const amount = parseFloat(amountInput.value);
+      const from = fromCurrencySelect.value;
+      const to = toCurrencySelect.value;
+
+      resultDisplay.textContent = '...';
+
+      if (isNaN(amount) || amount <= 0) {
+        resultDisplay.textContent = 'Invalid amount';
+        showMessage('Enter a valid amount', 'error');
+        return;
+      }
+
+      if (from === to) {
+        resultDisplay.textContent = amount.toFixed(2);
+        showMessage('Same currency', 'success');
+        return;
+      }
+
+      convertButton.disabled = true;
+      convertButton.textContent = 'Converting...';
+
+      const rate = await getExchangeRate(from, to);
+      convertButton.disabled = false;
+      convertButton.textContent = 'Convert';
+
+      if (rate !== null) {
+        const result = amount * rate;
+        const formatter = new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: to,
+        });
+        resultDisplay.textContent = formatter.format(result);
+        showMessage(`1 ${from} = ${rate.toFixed(4)} ${to}`, 'success');
+      } else {
+        resultDisplay.textContent = 'Conversion Failed';
+      }
+    }
+
+    function swapCurrencies() {
+      const temp = fromCurrencySelect.value;
+      fromCurrencySelect.value = toCurrencySelect.value;
+      toCurrencySelect.value = temp;
+      convertCurrency();
+    }
+
+    async function init() {
+      const currencies = await fetchCurrencies();
+      if (currencies) {
+        populateCurrencies(currencies);
+        convertCurrency();
+      }
+    }
+
+    convertButton.addEventListener('click', convertCurrency);
+    swapButton.addEventListener('click', swapCurrencies);
+    amountInput.addEventListener('input', convertCurrency);
+    fromCurrencySelect.addEventListener('change', convertCurrency);
+    toCurrencySelect.addEventListener('change', convertCurrency);
+
+    init();
+  </script>
+</body>
+</html>
